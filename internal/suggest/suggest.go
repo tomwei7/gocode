@@ -10,6 +10,8 @@ import (
 	"io/ioutil"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/mdempsky/gocode/internal/lookdot"
 )
@@ -19,6 +21,20 @@ type Config struct {
 	Logf       func(fmt string, args ...interface{})
 	Builtin    bool
 	IgnoreCase bool
+}
+
+var cache = struct {
+	lock  sync.Mutex
+	files map[string]fileCacheEntry
+	fset  *token.FileSet
+}{
+	files: make(map[string]fileCacheEntry),
+	fset:  token.NewFileSet(),
+}
+
+type fileCacheEntry struct {
+	file  *ast.File
+	mtime time.Time
 }
 
 // Suggest returns a list of suggestion candidates and the length of
@@ -86,8 +102,7 @@ func (c *Config) analyzePackage(filename string, data []byte, cursor int) (*toke
 	// still be in scope there.
 	filesemi := bytes.Join([][]byte{data[:cursor], []byte(";"), data[cursor:]}, nil)
 
-	fset := token.NewFileSet()
-	fileAST, err := parser.ParseFile(fset, filename, filesemi, parser.AllErrors)
+	fileAST, err := parser.ParseFile(cache.fset, filename, filesemi, parser.AllErrors)
 	if err != nil {
 		c.logParseError("Error parsing input file (outer block)", err)
 	}
@@ -95,35 +110,21 @@ func (c *Config) analyzePackage(filename string, data []byte, cursor int) (*toke
 	if astPos == 0 {
 		return nil, token.NoPos, nil, nil
 	}
-	pos := fset.File(astPos).Pos(cursor)
+	pos := cache.fset.File(astPos).Pos(cursor)
+	trimAST(fileAST, pos)
 
 	files := []*ast.File{fileAST}
 	for _, otherName := range c.findOtherPackageFiles(filename, fileAST.Name.Name) {
-		ast, err := parser.ParseFile(fset, otherName, nil, 0)
-		if err != nil {
-			c.logParseError("Error parsing other file", err)
-		}
-		files = append(files, ast)
-	}
-
-	// Clear any function bodies other than where the cursor
-	// is. They're not relevant to suggestions and only slow down
-	// typechecking.
-	for _, file := range files {
-		for _, decl := range file.Decls {
-			if fd, ok := decl.(*ast.FuncDecl); ok && (pos < fd.Pos() || pos >= fd.End()) {
-				fd.Body = nil
-			}
-		}
+		files = append(files, c.parseOtherFile(otherName))
 	}
 
 	cfg := types.Config{
 		Importer: c.Importer,
 		Error:    func(err error) {},
 	}
-	pkg, _ := cfg.Check("", fset, files, nil)
+	pkg, _ := cfg.Check("", cache.fset, files, nil)
 
-	return fset, pos, pkg, fileAST.Imports
+	return cache.fset, pos, pkg, fileAST.Imports
 }
 
 func (c *Config) fieldNameCandidates(typ types.Type, b *candidateCollector) {
