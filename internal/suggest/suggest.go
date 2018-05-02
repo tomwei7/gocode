@@ -114,8 +114,19 @@ func (c *Config) analyzePackage(filename string, data []byte, cursor int) (*toke
 	trimAST(fileAST, pos)
 
 	files := []*ast.File{fileAST}
-	for _, otherName := range c.findOtherPackageFiles(filename, fileAST.Name.Name) {
-		files = append(files, c.parseOtherFile(otherName))
+
+	otherFilenames := c.findOtherPackageFiles(filename, fileAST.Name.Name)
+
+	// TODO(mdempsky): Use semaphore to bound concurrency.
+	otherFilesChan := make(chan *ast.File, len(otherFilenames))
+	for _, otherFilename := range otherFilenames {
+		otherFilename := otherFilename
+		go func() {
+			otherFilesChan <- c.parseOtherFile(otherFilename)
+		}()
+	}
+	for range otherFilenames {
+		files = append(files, <-otherFilesChan)
 	}
 
 	cfg := types.Config{
