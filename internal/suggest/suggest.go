@@ -2,12 +2,14 @@ package suggest
 
 import (
 	"bytes"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/scanner"
 	"go/token"
 	"go/types"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -96,7 +98,47 @@ func (c *Config) Suggest(filename string, data []byte, cursor int) ([]Candidate,
 	return res, len(partial)
 }
 
-func (c *Config) analyzePackage(filename string, data []byte, cursor int) (*token.FileSet, token.Pos, *types.Package, []*ast.ImportSpec) {
+func (c *Config) parseOtherFile(filename string) *ast.File {
+	entry := cache.files[filename]
+
+	fi, err := os.Stat(filename)
+	if err != nil {
+		// TODO(mdempsky): How to handle this cleanly?
+		panic(err)
+	}
+
+	if entry.mtime != fi.ModTime() {
+		file, err := parser.ParseFile(cache.fset, filename, nil, 0)
+		if err != nil {
+			c.logParseError(fmt.Sprintf("Error parsing %q", filename), err)
+		}
+		trimAST(file, token.NoPos)
+
+		entry = fileCacheEntry{file, fi.ModTime()}
+		cache.files[filename] = entry
+	}
+
+	return entry.file
+}
+
+func (c *Config) analyzePackage(filename string, data []byte, cursor int) (*token.FileSet, token.Pos, *types.Package) {
+	cache.lock.Lock()
+	defer cache.lock.Unlock()
+
+	// Reset every 1GB of files so fset doesn't overflow.
+	if cache.fset.Base() >= 1e9 {
+		cache.fset = token.NewFileSet()
+		cache.files = make(map[string]fileCacheEntry)
+	}
+
+	// Delete random files to keep the cache at most 100 entries.
+	for k := range cache.files {
+		if len(cache.files) <= 100 {
+			break
+		}
+		delete(cache.files, k)
+	}
+
 	// If we're in trailing white space at the end of a scope,
 	// sometimes go/types doesn't recognize that variables should
 	// still be in scope there.
@@ -114,19 +156,8 @@ func (c *Config) analyzePackage(filename string, data []byte, cursor int) (*toke
 	trimAST(fileAST, pos)
 
 	files := []*ast.File{fileAST}
-
-	otherFilenames := c.findOtherPackageFiles(filename, fileAST.Name.Name)
-
-	// TODO(mdempsky): Use semaphore to bound concurrency.
-	otherFilesChan := make(chan *ast.File, len(otherFilenames))
-	for _, otherFilename := range otherFilenames {
-		otherFilename := otherFilename
-		go func() {
-			otherFilesChan <- c.parseOtherFile(otherFilename)
-		}()
-	}
-	for range otherFilenames {
-		files = append(files, <-otherFilesChan)
+	for _, otherName := range c.findOtherPackageFiles(filename, fileAST.Name.Name) {
+		files = append(files, c.parseOtherFile(otherName))
 	}
 
 	cfg := types.Config{
@@ -136,6 +167,45 @@ func (c *Config) analyzePackage(filename string, data []byte, cursor int) (*toke
 	pkg, _ := cfg.Check("", cache.fset, files, nil)
 
 	return cache.fset, pos, pkg, fileAST.Imports
+}
+
+// trimAST clears any part of the AST not relevant to type checking
+// expressions at pos.
+func trimAST(file *ast.File, pos token.Pos) {
+	ast.Inspect(file, func(n ast.Node) bool {
+		if n == nil {
+			return false
+		}
+		if pos < n.Pos() || pos >= n.End() {
+			switch n := n.(type) {
+			case *ast.FuncDecl:
+				n.Body = nil
+			case *ast.BlockStmt:
+				n.List = nil
+			case *ast.CaseClause:
+				n.Body = nil
+			case *ast.CommClause:
+				n.Body = nil
+			case *ast.CompositeLit:
+				// Leave elts in place for [...]T
+				// array literals, because they can
+				// affect the expression's type.
+				if !isEllipsisArray(n.Type) {
+					n.Elts = nil
+				}
+			}
+		}
+		return true
+	})
+}
+
+func isEllipsisArray(n ast.Expr) bool {
+	at, ok := n.(*ast.ArrayType)
+	if !ok {
+		return false
+	}
+	_, ok = at.Len.(*ast.Ellipsis)
+	return ok
 }
 
 func (c *Config) fieldNameCandidates(typ types.Type, b *candidateCollector) {
