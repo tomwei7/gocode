@@ -81,6 +81,7 @@ type candidateCollector struct {
 	partial    string
 	filter     objectFilter
 	builtin    bool
+	ignoreCase bool
 }
 
 func (b *candidateCollector) getCandidates() []Candidate {
@@ -180,8 +181,7 @@ func (b *candidateCollector) appendObject(obj types.Object) {
 	if b.filter != nil && !b.filter(obj) {
 		return
 	}
-
-	if b.filter != nil || strings.HasPrefix(obj.Name(), b.partial) {
+	if !b.ignoreCase && (b.filter != nil || strings.HasPrefix(obj.Name(), b.partial)) {
 		b.exact = append(b.exact, obj)
 	} else if strings.HasPrefix(strings.ToLower(obj.Name()), strings.ToLower(b.partial)) {
 		b.badcase = append(b.badcase, obj)
