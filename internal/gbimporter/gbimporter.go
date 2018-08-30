@@ -5,10 +5,26 @@ import (
 	"go/build"
 	goimporter "go/importer"
 	"go/types"
+	"io/ioutil"
+	"log"
+	"os"
+	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
 )
+
+type installedInfo struct {
+	Target string
+	MTime  int64
+}
+
+var installedMap map[string]*installedInfo
+
+func init() {
+	installedMap = make(map[string]*installedInfo)
+}
 
 // We need to mangle go/build.Default to make gcimporter work as
 // intended, so use a lock to protect against concurrent accesses.
@@ -63,6 +79,7 @@ func (i *importer) Import(path string) (*types.Package, error) {
 }
 
 func (i *importer) ImportFrom(path, srcDir string, mode types.ImportMode) (*types.Package, error) {
+	i.tryInstallPackage(path, srcDir)
 	buildDefaultLock.Lock()
 	defer buildDefaultLock.Unlock()
 
@@ -90,6 +107,64 @@ func (i *importer) ImportFrom(path, srcDir string, mode types.ImportMode) (*type
 		pkg, _ = srcImporter.ImportFrom(path, srcDir, mode)
 	}
 	return pkg, err
+}
+
+func (i *importer) tryInstallPackage(pkgPath, srcDir string) {
+	target := path.Join(i.ctx.GOPATH, "src", pkgPath)
+	for dir := srcDir; dir != "/" && dir != "."; dir = path.Dir(dir) {
+		tryDir := path.Join(dir, "vendor", pkgPath)
+		if stat, err := os.Stat(tryDir); err == nil && stat.IsDir() {
+			target = tryDir
+			break
+		}
+	}
+	mtime, err := newest(target, ".go")
+	if err != nil || mtime == 0 {
+		return
+	}
+	// check build
+	if gprel, err := filepath.Rel(filepath.Join(i.ctx.GOPATH, "src"), target); err == nil {
+		pkgPath := filepath.Join(i.ctx.GOPATH, "pkg", fmt.Sprintf("%s_%s", i.ctx.GOOS, i.ctx.GOARCH), gprel+".a")
+		pkgMTime := modTime(pkgPath)
+		if pkgMTime > mtime {
+			installedMap[target] = &installedInfo{Target: target, MTime: mtime}
+			return
+		}
+	}
+	info, ok := installedMap[target]
+	if !ok || info.MTime == 0 || info.MTime < mtime {
+		if stat, err := os.Stat(target); err == nil && stat.IsDir() {
+			if err := exec.Command("go", "install", target).Run(); err != nil {
+				log.Printf("try go install error: %s", err)
+			}
+			installedMap[target] = &installedInfo{Target: target, MTime: mtime}
+		}
+	}
+}
+
+func newest(target, suffix string) (int64, error) {
+	infos, err := ioutil.ReadDir(target)
+	if err != nil {
+		return 0, err
+	}
+	var n int64
+	for _, info := range infos {
+		if strings.HasSuffix(info.Name(), suffix) {
+			mtime := info.ModTime().Unix()
+			if mtime > n {
+				n = mtime
+			}
+		}
+	}
+	return n, nil
+}
+
+func modTime(name string) int64 {
+	info, err := os.Stat(name)
+	if err != nil {
+		return 0
+	}
+	return info.ModTime().Unix()
 }
 
 func (i *importer) splitPathList(list string) []string {
