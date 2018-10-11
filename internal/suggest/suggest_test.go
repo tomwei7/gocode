@@ -3,11 +3,11 @@ package suggest_test
 import (
 	"bytes"
 	"encoding/json"
-	"go/build"
 	"go/importer"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -21,9 +21,10 @@ func TestRegress(t *testing.T) {
 	}
 
 	for _, testDir := range testDirs {
-		// Skip test test.0011 for Go < 1.11 because a method was added to reflect.Value.
-		if !contains(build.Default.ReleaseTags, "go1.11") && strings.HasSuffix(testDir, "test.0011") {
-			continue
+		// Skip test.0011 for Go <= 1.11 because a method was added to reflect.Value.
+		// TODO(rstambler): Change this when Go 1.12 comes out.
+		if !strings.HasPrefix(runtime.Version(), "devel") && strings.HasSuffix(testDir, "test.0011") {
+				continue
 		}
 		testDir := testDir // capture
 		name := strings.TrimPrefix(testDir, "testdata/")
