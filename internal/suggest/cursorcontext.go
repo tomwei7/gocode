@@ -260,6 +260,7 @@ const (
 	unknownContext cursorContext = iota
 	selectContext
 	compositeLiteralContext
+	importContext
 )
 
 func deduceCursorContext(file []byte, cursor int) (cursorContext, string, string) {

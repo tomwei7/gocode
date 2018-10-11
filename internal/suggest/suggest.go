@@ -43,7 +43,6 @@ func (c *Config) Suggest(filename string, data []byte, cursor int) ([]Candidate,
 		builtin:    ctx != selectContext && c.Builtin,
 		ignoreCase: c.IgnoreCase,
 	}
-
 	switch ctx {
 	case selectContext:
 		tv, _ := types.Eval(fset, pkg, pos, expr)

@@ -110,7 +110,8 @@ func (i *importer) ImportFrom(path, srcDir string, mode types.ImportMode) (*type
 }
 
 func (i *importer) tryInstallPackage(pkgPath, srcDir string) {
-	target := path.Join(i.ctx.GOPATH, "src", pkgPath)
+	goPath := strings.Split(i.ctx.GOPATH, ":")[0]
+	target := path.Join(goPath, "src", pkgPath)
 	for dir := srcDir; dir != "/" && dir != "."; dir = path.Dir(dir) {
 		tryDir := path.Join(dir, "vendor", pkgPath)
 		if stat, err := os.Stat(tryDir); err == nil && stat.IsDir() {
@@ -120,11 +121,12 @@ func (i *importer) tryInstallPackage(pkgPath, srcDir string) {
 	}
 	mtime, err := newest(target, ".go")
 	if err != nil || mtime == 0 {
+		log.Printf("newest error %s", err)
 		return
 	}
 	// check build
-	if gprel, err := filepath.Rel(filepath.Join(i.ctx.GOPATH, "src"), target); err == nil {
-		pkgPath := filepath.Join(i.ctx.GOPATH, "pkg", fmt.Sprintf("%s_%s", i.ctx.GOOS, i.ctx.GOARCH), gprel+".a")
+	if gprel, err := filepath.Rel(filepath.Join(goPath, "src"), target); err == nil {
+		pkgPath := filepath.Join(goPath, "pkg", fmt.Sprintf("%s_%s", i.ctx.GOOS, i.ctx.GOARCH), gprel+".a")
 		pkgMTime := modTime(pkgPath)
 		if pkgMTime > mtime {
 			installedMap[target] = &installedInfo{Target: target, MTime: mtime}
