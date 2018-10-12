@@ -129,6 +129,7 @@ func cmdAutoComplete(c *rpc.Client) {
 	req.Context = gbimporter.PackContext(&build.Default)
 	req.Source = *g_source
 	req.Builtin = *g_builtin
+	req.IgnoreCase = *g_ignore_case
 
 	var res AutoCompleteReply
 	var err error
