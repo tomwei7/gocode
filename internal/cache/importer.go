@@ -3,7 +3,6 @@ package cache
 import (
 	"go/token"
 	"go/types"
-	"log"
 	"os"
 	"sync"
 	"time"
@@ -33,7 +32,6 @@ func (i *importer) Import(importPath string) (*types.Package, error) {
 
 func (i *importer) ImportFrom(importPath, srcDir string, mode types.ImportMode) (*types.Package, error) {
 	filename, path := gcexportdata.Find(importPath, srcDir)
-	log.Printf("filename: %v, path: %v", filename, path)
 	fi, err := os.Stat(filename)
 	if err != nil {
 		return nil, err

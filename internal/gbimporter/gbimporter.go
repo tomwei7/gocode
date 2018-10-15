@@ -14,7 +14,7 @@ import (
 // intended, so use a lock to protect against concurrent accesses.
 var buildDefaultLock sync.Mutex
 
-var srcImporter types.ImporterFrom = goimporter.For("source", nil).(types.ImporterFrom)
+var SourceImporter types.ImporterFrom = goimporter.For("source", nil).(types.ImporterFrom)
 
 // importer implements types.ImporterFrom and provides transparent
 // support for gb-based projects.
@@ -87,7 +87,7 @@ func (i *importer) ImportFrom(path, srcDir string, mode types.ImportMode) (*type
 	pkg, err := i.underlying.ImportFrom(path, srcDir, mode)
 	if pkg == nil {
 		// If importing fails, try importing with source importer.
-		pkg, _ = srcImporter.ImportFrom(path, srcDir, mode)
+		pkg, _ = SourceImporter.ImportFrom(path, srcDir, mode)
 	}
 	return pkg, err
 }
