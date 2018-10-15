@@ -11,3 +11,7 @@ Please answer these questions before submitting your issue. Thanks!
 
 Run `gocode close` and then run `gocode -s -debug` to restart gocode in debug mode. 
 Try to complete once again from your editor, and paste the output printed by gocode here.
+
+### What (client-side) flags are you passing into `gocode`?
+
+Please note here if you are using `-source`, `-builtin`, or `-ignore-case`.
