@@ -121,7 +121,7 @@ func (c *Config) parseOtherFile(filename string) *ast.File {
 	return entry.file
 }
 
-func (c *Config) analyzePackage(filename string, data []byte, cursor int) (*token.FileSet, token.Pos, *types.Package) {
+func (c *Config) analyzePackage(filename string, data []byte, cursor int) (*token.FileSet, token.Pos, *types.Package, []*ast.ImportSpec) {
 	cache.lock.Lock()
 	defer cache.lock.Unlock()
 

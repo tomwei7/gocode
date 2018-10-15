@@ -3,20 +3,17 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"go/token"
-	"go/types"
 	"log"
 	"net"
 	"net/rpc"
 	"os"
 	"os/signal"
 	"runtime/debug"
-	"sync"
 	"time"
 
-	"github.com/mdempsky/gocode/gbimporter"
-	"github.com/mdempsky/gocode/suggest"
-	"golang.org/x/tools/go/gcexportdata"
+	"github.com/mdempsky/gocode/internal/cache"
+	"github.com/mdempsky/gocode/internal/gbimporter"
+	"github.com/mdempsky/gocode/internal/suggest"
 )
 
 func doServer() {
@@ -92,20 +89,16 @@ func (s *Server) AutoComplete(req *AutoCompleteRequest, res *AutoCompleteReply) 
 	}
 	now := time.Now()
 
-	cacheImporter.lock.Lock()
-	defer cacheImporter.lock.Unlock()
-	for k := range cacheImporter.imports {
-		if len(cacheImporter.imports) <= 100 {
-			break
-		}
-		delete(cacheImporter.imports, k)
-	}
+	cache.Importer.Lock()
+	defer cache.Importer.Unlock()
+	cache.Importer.Cleanup()
 
 	cfg := suggest.Config{
-		Importer:   gbimporter.New(&req.Context, req.Filename, underlying),
+		Importer:   &cache.Importer,
 		Builtin:    req.Builtin,
 		IgnoreCase: req.IgnoreCase,
 	}
+
 	if *g_debug {
 		cfg.Logf = log.Printf
 	}
@@ -123,57 +116,6 @@ func (s *Server) AutoComplete(req *AutoCompleteRequest, res *AutoCompleteReply) 
 	}
 	res.Candidates, res.Len = candidates, d
 	return nil
-}
-
-type CacheImporter struct {
-	lock    sync.Mutex
-	fset    *token.FileSet
-	imports map[string]importCacheEntry
-}
-
-func (i *CacheImporter) Import(importPath string) (*types.Package, error) {
-	return i.ImportFrom(importPath, "", 0)
-}
-
-func (i *CacheImporter) ImportFrom(importPath, srcDir string, mode types.ImportMode) (*types.Package, error) {
-	filename, path := gcexportdata.Find(importPath, srcDir)
-	fi, err := os.Stat(filename)
-	if err != nil {
-		return nil, err
-	}
-
-	entry := i.imports[path]
-	if entry.mtime != fi.ModTime() {
-		f, err := os.Open(filename)
-		if err != nil {
-			return nil, err
-		}
-
-		in, err := gcexportdata.NewReader(f)
-		if err != nil {
-			return nil, err
-		}
-
-		pkg, err := gcexportdata.Read(in, i.fset, make(map[string]*types.Package), path)
-		if err != nil {
-			return nil, err
-		}
-
-		entry = importCacheEntry{pkg, fi.ModTime()}
-		i.imports[path] = entry
-	}
-
-	return entry.pkg, nil
-}
-
-var cacheImporter = CacheImporter{
-	fset:    token.NewFileSet(),
-	imports: make(map[string]importCacheEntry),
-}
-
-type importCacheEntry struct {
-	pkg   *types.Package
-	mtime time.Time
 }
 
 type ExitRequest struct{}
