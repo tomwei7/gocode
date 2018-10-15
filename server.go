@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"go/types"
 	"log"
 	"net"
 	"net/rpc"
@@ -89,12 +90,18 @@ func (s *Server) AutoComplete(req *AutoCompleteRequest, res *AutoCompleteReply) 
 	}
 	now := time.Now()
 
-	cache.Importer.Lock()
-	defer cache.Importer.Unlock()
-	cache.Importer.Cleanup()
+	var underlying types.ImporterFrom
+	if req.Source {
+		underlying = gbimporter.SourceImporter
+	} else {
+		cache.Importer.Lock()
+		defer cache.Importer.Unlock()
+		cache.Importer.Cleanup()
+		underlying = &cache.Importer
+	}
 
 	cfg := suggest.Config{
-		Importer:   &cache.Importer,
+		Importer:   gbimporter.New(&req.Context, req.Filename, underlying),
 		Builtin:    req.Builtin,
 		IgnoreCase: req.IgnoreCase,
 	}
