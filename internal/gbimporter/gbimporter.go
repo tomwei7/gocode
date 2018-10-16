@@ -5,6 +5,7 @@ import (
 	"go/build"
 	goimporter "go/importer"
 	"go/types"
+	"log"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -25,23 +26,30 @@ type importer struct {
 	gbpaths    []string
 }
 
-func New(ctx *PackedContext, filename string, underlying types.ImporterFrom) types.ImporterFrom {
-	imp := &importer{
+func New(ctx *PackedContext, gbroot string, gbpaths []string, underlying types.ImporterFrom) types.ImporterFrom {
+	return &importer{
 		ctx:        ctx,
 		underlying: underlying,
+		gbroot:     gbroot,
+		gbpaths:    gbpaths,
 	}
+}
 
+func HandleGB(filename, gopath, goroot string) (gbroot string, gbpaths []string) {
+	log.Printf("gopath: %v, goroot: %v, filename: %v", gopath, goroot, filename)
 	slashed := filepath.ToSlash(filename)
 	i := strings.LastIndex(slashed, "/vendor/src/")
 	if i < 0 {
+		log.Printf("nothing!!")
 		i = strings.LastIndex(slashed, "/src/")
 	}
 	if i > 0 {
-		paths := filepath.SplitList(imp.ctx.GOPATH)
+		log.Printf("something!!!")
+		paths := filepath.SplitList(gopath)
 
-		gbroot := filepath.FromSlash(slashed[:i])
+		gbroot = filepath.FromSlash(slashed[:i])
 		gbvendor := filepath.Join(gbroot, "vendor")
-		if samePath(gbroot, imp.ctx.GOROOT) {
+		if samePath(gbroot, goroot) {
 			goto Found
 		}
 		for _, path := range paths {
@@ -50,12 +58,12 @@ func New(ctx *PackedContext, filename string, underlying types.ImporterFrom) typ
 			}
 		}
 
-		imp.gbroot = gbroot
-		imp.gbpaths = append(paths, gbroot, gbvendor)
+		gbroot = gbroot
+		gbpaths = append(paths, gbroot, gbvendor)
 	Found:
 	}
-
-	return imp
+	log.Printf("returning: %v", gbroot)
+	return gbroot, gbpaths
 }
 
 func (i *importer) Import(path string) (*types.Package, error) {
@@ -87,7 +95,7 @@ func (i *importer) ImportFrom(path, srcDir string, mode types.ImportMode) (*type
 	pkg, err := i.underlying.ImportFrom(path, srcDir, mode)
 	if pkg == nil {
 		// If importing fails, try importing with source importer.
-		pkg, _ = SourceImporter.ImportFrom(path, srcDir, mode)
+		// pkg, _ = SourceImporter.ImportFrom(path, srcDir, mode)
 	}
 	return pkg, err
 }

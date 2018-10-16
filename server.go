@@ -90,22 +90,22 @@ func (s *Server) AutoComplete(req *AutoCompleteRequest, res *AutoCompleteReply) 
 	}
 	now := time.Now()
 
+	gbroot, gbpaths := gbimporter.HandleGB(req.Filename, req.Context.GOPATH, req.Context.GOROOT)
+	log.Printf("gbroot: %v, gbpaths: %v", gbroot, gbpaths)
+
 	var underlying types.ImporterFrom
 	if req.Source {
 		underlying = gbimporter.SourceImporter
 	} else {
-		cache.Importer.Lock()
-		defer cache.Importer.Unlock()
-		cache.Importer.Cleanup()
-		underlying = &cache.Importer
+		cache.ImporterCache.Lock()
+		defer cache.ImporterCache.Unlock()
+		underlying = cache.NewImporter(gbroot, gbpaths)
 	}
-
 	cfg := suggest.Config{
-		Importer:   gbimporter.New(&req.Context, req.Filename, underlying),
+		Importer:   gbimporter.New(&req.Context, gbroot, gbpaths, underlying),
 		Builtin:    req.Builtin,
 		IgnoreCase: req.IgnoreCase,
 	}
-
 	if *g_debug {
 		cfg.Logf = log.Printf
 	}
