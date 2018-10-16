@@ -2,7 +2,7 @@
 
 package cache
 
-// samePath checks two file paths for their equality based on the current filesystem
-func samePath(a, b string) bool {
+// SamePath checks two file paths for their equality based on the current filesystem
+func SamePath(a, b string) bool {
 	return a == b
 }

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/mdempsky/gocode/internal/cache"
+	"github.com/mdempsky/gocode/internal/gbimporter"
 	"github.com/mdempsky/gocode/internal/suggest"
 )
 
@@ -90,18 +91,20 @@ func (s *Server) AutoComplete(req *AutoCompleteRequest, res *AutoCompleteReply) 
 	}
 	now := time.Now()
 
-	var underlying types.ImporterFrom
+	var imp types.ImporterFrom
 	if req.Source {
-		underlying = cache.SourceImporter
+		underlying := importer.For("source", nil).(types.ImporterFrom)
+		imp = gbimporter.New(&req.Context, req.Filename, underlying)
 	} else {
-		underlying = importer.Default().(types.ImporterFrom)
+		cache.ImporterCache.Lock()
+		defer cache.ImporterCache.Unlock()
+
+		underlying := importer.Default().(types.ImporterFrom)
+		imp = cache.New(&req.Context, req.Filename, underlying)
 	}
 
-	cache.ImporterCache.Lock()
-	defer cache.ImporterCache.Unlock()
-
 	cfg := suggest.Config{
-		Importer:   cache.New(&req.Context, req.Filename, underlying),
+		Importer:   imp,
 		Builtin:    req.Builtin,
 		IgnoreCase: req.IgnoreCase,
 	}

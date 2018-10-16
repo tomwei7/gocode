@@ -19,8 +19,6 @@ import (
 // intended, so use a lock to protect against concurrent accesses.
 var buildDefaultLock sync.Mutex
 
-var SourceImporter types.ImporterFrom = goimporter.For("source", nil).(types.ImporterFrom)
-
 var ImporterCache = importerCache{
 	fset:    token.NewFileSet(),
 	imports: make(map[string]importCacheEntry),
@@ -44,11 +42,11 @@ func New(ctx *PackedContext, filename string, underlying types.ImporterFrom) typ
 
 		gbroot := filepath.FromSlash(slashed[:i])
 		gbvendor := filepath.Join(gbroot, "vendor")
-		if samePath(gbroot, imp.ctx.GOROOT) {
+		if SamePath(gbroot, imp.ctx.GOROOT) {
 			goto Found
 		}
 		for _, path := range paths {
-			if samePath(path, gbroot) || samePath(path, gbvendor) {
+			if SamePath(path, gbroot) || SamePath(path, gbvendor) {
 				goto Found
 			}
 		}
@@ -120,7 +118,7 @@ func (i *importer) ImportFrom(importPath, srcDir string, mode types.ImportMode) 
 		pkg, err := i.underlying.ImportFrom(path, srcDir, mode)
 		if pkg == nil {
 			// If importing still fails, try importing with source importer.
-			pkg, _ = SourceImporter.ImportFrom(path, srcDir, mode)
+			pkg, _ = goimporter.For("source", nil).Import(path)
 		}
 		if pkg != nil {
 			entry = importCacheEntry{pkg, now}
