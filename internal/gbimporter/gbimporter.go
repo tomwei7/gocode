@@ -3,6 +3,7 @@ package gbimporter
 import (
 	"fmt"
 	"go/build"
+	goimporter "go/importer"
 	"go/types"
 	"path/filepath"
 	"strings"
@@ -18,18 +19,15 @@ var buildDefaultLock sync.Mutex
 // importer implements types.ImporterFrom and provides transparent
 // support for gb-based projects.
 type importer struct {
-	underlying types.ImporterFrom
-	ctx        *cache.PackedContext
-	gbroot     string
-	gbvendor   string
+	ctx     *cache.PackedContext
+	gbroot  string
+	gbpaths []string
 }
 
-func New(ctx *cache.PackedContext, filename string, underlying types.ImporterFrom) types.ImporterFrom {
+func New(ctx *cache.PackedContext, filename string) types.ImporterFrom {
 	imp := &importer{
-		ctx:        ctx,
-		underlying: underlying,
+		ctx: ctx,
 	}
-
 	slashed := filepath.ToSlash(filename)
 	i := strings.LastIndex(slashed, "/vendor/src/")
 	if i < 0 {
@@ -50,7 +48,7 @@ func New(ctx *cache.PackedContext, filename string, underlying types.ImporterFro
 		}
 
 		imp.gbroot = gbroot
-		imp.gbvendor = gbvendor
+		imp.gbpaths = append(paths, gbroot, gbvendor)
 	Found:
 	}
 
@@ -83,20 +81,14 @@ func (i *importer) ImportFrom(path, srcDir string, mode types.ImportMode) (*type
 	def.SplitPathList = i.splitPathList
 	def.JoinPath = i.joinPath
 
-	pkg, err := i.underlying.ImportFrom(path, srcDir, mode)
-	if pkg == nil {
-		// If importing fails, try importing with source importer.
-		// pkg, _ = SourceImporter.ImportFrom(path, srcDir, mode)
-	}
-	return pkg, err
+	return goimporter.For("source", nil).Import(path)
 }
 
 func (i *importer) splitPathList(list string) []string {
-	res := filepath.SplitList(list)
 	if i.gbroot != "" {
-		res = append(res, i.gbroot, i.gbvendor)
+		return i.gbpaths
 	}
-	return res
+	return filepath.SplitList(list)
 }
 
 func (i *importer) joinPath(elem ...string) string {

@@ -93,8 +93,7 @@ func (s *Server) AutoComplete(req *AutoCompleteRequest, res *AutoCompleteReply) 
 
 	var imp types.ImporterFrom
 	if req.Source {
-		underlying := importer.For("source", nil).(types.ImporterFrom)
-		imp = gbimporter.New(&req.Context, req.Filename, underlying)
+		imp = gbimporter.New(&req.Context, req.Filename)
 	} else {
 		cache.ImporterCache.Lock()
 		defer cache.ImporterCache.Unlock()
