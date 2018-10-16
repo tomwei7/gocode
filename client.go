@@ -14,7 +14,7 @@ import (
 
 	"runtime/debug"
 
-	"github.com/mdempsky/gocode/internal/gbimporter"
+	"github.com/mdempsky/gocode/internal/cache"
 	"github.com/mdempsky/gocode/internal/suggest"
 )
 
@@ -126,7 +126,7 @@ func tryToConnect(network, address string) (*rpc.Client, error) {
 func cmdAutoComplete(c *rpc.Client) {
 	var req AutoCompleteRequest
 	req.Filename, req.Data, req.Cursor = prepareFilenameDataCursor()
-	req.Context = gbimporter.PackContext(&build.Default)
+	req.Context = cache.PackContext(&build.Default)
 	req.Source = *g_source
 	req.Builtin = *g_builtin
 	req.IgnoreCase = *g_ignore_case

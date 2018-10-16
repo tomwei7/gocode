@@ -3,9 +3,9 @@ package cache
 import (
 	"fmt"
 	"go/build"
+	goimporter "go/importer"
 	"go/token"
 	"go/types"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,24 +15,57 @@ import (
 	"golang.org/x/tools/go/gcexportdata"
 )
 
+// We need to mangle go/build.Default to make gcimporter work as
+// intended, so use a lock to protect against concurrent accesses.
+var buildDefaultLock sync.Mutex
+
+var SourceImporter types.ImporterFrom = goimporter.For("source", nil).(types.ImporterFrom)
+
 var ImporterCache = importerCache{
 	fset:    token.NewFileSet(),
 	imports: make(map[string]importCacheEntry),
 }
 
-func NewImporter(gbroot string, gbpaths []string) *importer {
+func New(ctx *PackedContext, filename string, underlying types.ImporterFrom) types.ImporterFrom {
 	ImporterCache.cleanImporter()
-	return &importer{
-		gbroot:        gbroot,
-		gbpaths:       gbpaths,
+	imp := &importer{
+		ctx:           ctx,
+		underlying:    underlying,
 		importerCache: &ImporterCache,
 	}
+
+	slashed := filepath.ToSlash(filename)
+	i := strings.LastIndex(slashed, "/vendor/src/")
+	if i < 0 {
+		i = strings.LastIndex(slashed, "/src/")
+	}
+	if i > 0 {
+		paths := filepath.SplitList(imp.ctx.GOPATH)
+
+		gbroot := filepath.FromSlash(slashed[:i])
+		gbvendor := filepath.Join(gbroot, "vendor")
+		if samePath(gbroot, imp.ctx.GOROOT) {
+			goto Found
+		}
+		for _, path := range paths {
+			if samePath(path, gbroot) || samePath(path, gbvendor) {
+				goto Found
+			}
+		}
+
+		imp.gbroot = gbroot
+		imp.gbvendor = gbvendor
+	Found:
+	}
+
+	return imp
 }
 
 type importer struct {
 	*importerCache
-	gbroot  string
-	gbpaths []string
+	gbroot, gbvendor string
+	underlying       types.ImporterFrom
+	ctx              *PackedContext
 }
 
 type importerCache struct {
@@ -51,14 +84,55 @@ func (i *importer) Import(importPath string) (*types.Package, error) {
 }
 
 func (i *importer) ImportFrom(importPath, srcDir string, mode types.ImportMode) (*types.Package, error) {
-	filename, path := findExportData(importPath, srcDir, i.gbroot)
-	log.Printf("filename: %v, path: %v", filename, path)
+	// Save build defaults.
+	buildDefaultLock.Lock()
+	defer buildDefaultLock.Unlock()
+
+	origDef := build.Default
+	defer func() { build.Default = origDef }()
+
+	def := &build.Default
+	def.GOPATH = i.ctx.GOPATH
+	if i.gbroot != "" {
+		def.GOPATH = i.gbroot
+	}
+	def.GOARCH = i.ctx.GOARCH
+	def.GOOS = i.ctx.GOOS
+	def.GOROOT = i.ctx.GOROOT
+	def.CgoEnabled = i.ctx.CgoEnabled
+	def.UseAllFiles = i.ctx.UseAllFiles
+	def.Compiler = i.ctx.Compiler
+	def.BuildTags = i.ctx.BuildTags
+	def.ReleaseTags = i.ctx.ReleaseTags
+	def.InstallSuffix = i.ctx.InstallSuffix
+	def.SplitPathList = i.splitPathList
+	def.JoinPath = i.joinPath
+
+	filename, path := gcexportdata.Find(importPath, srcDir)
+	entry, ok := i.imports[path]
+	if filename == "" {
+		now := time.Now()
+		// If there is no .a file, try importing from cache (if the entry is less than 10 minutes old).
+		if ok && time.Since(entry.mtime) >= time.Minute*10 {
+			return entry.pkg, nil
+		}
+		// If there is no cache entry, import it regularly and cache it.
+		pkg, err := i.underlying.ImportFrom(path, srcDir, mode)
+		if pkg == nil {
+			// If importing still fails, try importing with source importer.
+			pkg, _ = SourceImporter.ImportFrom(path, srcDir, mode)
+		}
+		if pkg != nil {
+			entry = importCacheEntry{pkg, now}
+			i.imports[path] = entry
+		}
+		return pkg, err
+	}
 	fi, err := os.Stat(filename)
 	if err != nil {
 		return nil, err
 	}
 
-	entry := i.imports[path]
 	if entry.mtime != fi.ModTime() {
 		f, err := os.Open(filename)
 		if err != nil {
@@ -93,68 +167,41 @@ func (i *importerCache) cleanImporter() {
 	}
 }
 
-var pkgExts = [...]string{".x", ".a", ".o"}
-
-func findExportData(path, srcDir, gbroot string) (filename, id string) {
-	if path == "" {
-		return
+func (i *importer) splitPathList(list string) []string {
+	res := filepath.SplitList(list)
+	if i.gbroot != "" {
+		res = append(res, i.gbroot, i.gbvendor)
 	}
+	return res
+}
 
-	var noext string
-	switch {
-	default:
-		// "x" -> "$GOPATH/pkg/$GOOS_$GOARCH/x.ext", "x"
-		// Don't require the source files to be present.
-		if abs, err := filepath.Abs(srcDir); err == nil { // see issue 14282
-			srcDir = abs
-		}
-		log.Printf("path: %v, srcDir: %v", path, srcDir)
-		log.Printf("gbroot: %v", gbroot)
-		ctxt := &build.Context{
-			GOPATH:        gbroot,
-			GOROOT:        build.Default.GOROOT,
-			Compiler:      build.Default.Compiler,
-			GOOS:          build.Default.GOOS,
-			GOARCH:        build.Default.GOARCH,
-			SplitPathList: build.Default.SplitPathList,
-			JoinPath:      build.Default.JoinPath,
-		}
-		bp, _ := ctxt.Import(path, srcDir, build.FindOnly|build.AllowBinary)
-		if bp.PkgObj == "" {
-			id = path // make sure we have an id to print in error message
-			return
-		}
-		noext = strings.TrimSuffix(bp.PkgObj, ".a")
-		id = bp.ImportPath
+func (i *importer) joinPath(elem ...string) string {
+	res := filepath.Join(elem...)
 
-	case build.IsLocalImport(path):
-		// "./x" -> "/this/directory/x.ext", "/this/directory/x"
-		noext = filepath.Join(srcDir, path)
-		id = noext
+	if i.gbroot != "" {
+		// Want to rewrite "$GBROOT/(vendor/)?pkg/$GOOS_$GOARCH(_)?"
+		// into "$GBROOT/pkg/$GOOS-$GOARCH(-)?".
+		// Note: gb doesn't use vendor/pkg.
+		if gbrel, err := filepath.Rel(i.gbroot, res); err == nil {
+			gbrel = filepath.ToSlash(gbrel)
+			gbrel, _ = match(gbrel, "vendor/")
+			if gbrel, ok := match(gbrel, fmt.Sprintf("pkg/%s_%s", i.ctx.GOOS, i.ctx.GOARCH)); ok {
+				gbrel, hasSuffix := match(gbrel, "_")
 
-	case filepath.IsAbs(path):
-		log.Printf("abs")
-		// for completeness only - go/build.Import
-		// does not support absolute imports
-		// "/x" -> "/x.ext", "/x"
-		noext = path
-		id = path
-	}
-
-	if false { // for debugging
-		if path != id {
-			fmt.Printf("%s -> %s\n", path, id)
+				// Reassemble into result.
+				if hasSuffix {
+					gbrel = "-" + gbrel
+				}
+				gbrel = fmt.Sprintf("pkg/%s-%s/", i.ctx.GOOS, i.ctx.GOARCH) + gbrel
+				gbrel = filepath.FromSlash(gbrel)
+				res = filepath.Join(i.gbroot, gbrel)
+			}
 		}
 	}
+	return res
+}
 
-	// try extensions
-	for _, ext := range pkgExts {
-		filename = noext + ext
-		if f, err := os.Stat(filename); err == nil && !f.IsDir() {
-			return
-		}
-	}
-
-	filename = "" // not found
-	return
+func match(s, prefix string) (string, bool) {
+	rest := strings.TrimPrefix(s, prefix)
+	return rest, len(rest) < len(s)
 }
