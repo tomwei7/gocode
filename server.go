@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"go/importer"
 	"go/types"
 	"log"
 	"net"
@@ -97,9 +96,7 @@ func (s *Server) AutoComplete(req *AutoCompleteRequest, res *AutoCompleteReply) 
 	} else {
 		cache.ImporterCache.Lock()
 		defer cache.ImporterCache.Unlock()
-
-		underlying := importer.Default().(types.ImporterFrom)
-		imp = cache.New(&req.Context, req.Filename, underlying)
+		imp = cache.New(&req.Context, req.Filename)
 	}
 
 	cfg := suggest.Config{

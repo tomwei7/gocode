@@ -24,11 +24,10 @@ var ImporterCache = importerCache{
 	imports: make(map[string]importCacheEntry),
 }
 
-func New(ctx *PackedContext, filename string, underlying types.ImporterFrom) types.ImporterFrom {
+func New(ctx *PackedContext, filename string) types.ImporterFrom {
 	ImporterCache.cleanImporter()
 	imp := &importer{
 		ctx:           ctx,
-		underlying:    underlying,
 		importerCache: &ImporterCache,
 	}
 
@@ -62,7 +61,6 @@ func New(ctx *PackedContext, filename string, underlying types.ImporterFrom) typ
 type importer struct {
 	*importerCache
 	gbroot, gbvendor string
-	underlying       types.ImporterFrom
 	ctx              *PackedContext
 }
 
@@ -82,7 +80,6 @@ func (i *importer) Import(importPath string) (*types.Package, error) {
 }
 
 func (i *importer) ImportFrom(importPath, srcDir string, mode types.ImportMode) (*types.Package, error) {
-	// Save build defaults.
 	buildDefaultLock.Lock()
 	defer buildDefaultLock.Unlock()
 
@@ -90,6 +87,7 @@ func (i *importer) ImportFrom(importPath, srcDir string, mode types.ImportMode) 
 	defer func() { build.Default = origDef }()
 
 	def := &build.Default
+	// The gb root of a project can be used as a $GOPATH because it contains pkg/.
 	def.GOPATH = i.ctx.GOPATH
 	if i.gbroot != "" {
 		def.GOPATH = i.gbroot
@@ -109,44 +107,38 @@ func (i *importer) ImportFrom(importPath, srcDir string, mode types.ImportMode) 
 	filename, path := gcexportdata.Find(importPath, srcDir)
 	entry, ok := i.imports[path]
 	if filename == "" {
-		now := time.Now()
-		// If there is no .a file, try importing from cache (if the entry is less than 10 minutes old).
-		if ok && time.Since(entry.mtime) >= time.Minute*10 {
+		// If there is no export data, check the cache.
+		// TODO(rstambler): Develop a better heuristic for entry eviction.
+		if ok && time.Since(entry.mtime) <= time.Minute*20 {
 			return entry.pkg, nil
 		}
-		// If there is no cache entry, import it regularly and cache it.
-		pkg, err := i.underlying.ImportFrom(path, srcDir, mode)
-		if pkg == nil {
-			// If importing still fails, try importing with source importer.
-			pkg, _ = goimporter.For("source", nil).Import(path)
-		}
+		// If there is no cache entry, import and cache using the source importer.
+		pkg, err := goimporter.For("source", nil).Import(path)
 		if pkg != nil {
-			entry = importCacheEntry{pkg, now}
+			entry = importCacheEntry{pkg, time.Now()}
 			i.imports[path] = entry
 		}
 		return pkg, err
 	}
+
+	// If there is export data for the package.
 	fi, err := os.Stat(filename)
 	if err != nil {
 		return nil, err
 	}
-
 	if entry.mtime != fi.ModTime() {
 		f, err := os.Open(filename)
 		if err != nil {
 			return nil, err
 		}
-
 		in, err := gcexportdata.NewReader(f)
 		if err != nil {
 			return nil, err
 		}
-
 		pkg, err := gcexportdata.Read(in, i.fset, make(map[string]*types.Package), path)
 		if err != nil {
 			return nil, err
 		}
-
 		entry = importCacheEntry{pkg, fi.ModTime()}
 		i.imports[path] = entry
 	}
