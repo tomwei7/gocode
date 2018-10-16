@@ -19,16 +19,20 @@ import (
 // intended, so use a lock to protect against concurrent accesses.
 var buildDefaultLock sync.Mutex
 
-var ImporterCache = importerCache{
+// Must be held while using the cache importer.
+var Mu sync.Mutex
+
+var importCache = importerCache{
 	fset:    token.NewFileSet(),
 	imports: make(map[string]importCacheEntry),
 }
 
 func New(ctx *PackedContext, filename string) types.ImporterFrom {
-	ImporterCache.cleanImporter()
+	importCache.clean()
+
 	imp := &importer{
 		ctx:           ctx,
-		importerCache: &ImporterCache,
+		importerCache: &importCache,
 	}
 
 	slashed := filepath.ToSlash(filename)
@@ -65,7 +69,6 @@ type importer struct {
 }
 
 type importerCache struct {
-	sync.Mutex
 	fset    *token.FileSet
 	imports map[string]importCacheEntry
 }
@@ -148,7 +151,7 @@ func (i *importer) ImportFrom(importPath, srcDir string, mode types.ImportMode) 
 
 // Delete random files to keep the cache at most 100 entries.
 // Only call while holding the importer's mutex.
-func (i *importerCache) cleanImporter() {
+func (i *importerCache) clean() {
 	for k := range i.imports {
 		if len(i.imports) <= 100 {
 			break

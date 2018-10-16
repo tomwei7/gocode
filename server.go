@@ -94,8 +94,8 @@ func (s *Server) AutoComplete(req *AutoCompleteRequest, res *AutoCompleteReply) 
 	if req.Source {
 		imp = gbimporter.New(&req.Context, req.Filename)
 	} else {
-		cache.ImporterCache.Lock()
-		defer cache.ImporterCache.Unlock()
+		cache.Mu.Lock()
+		defer cache.Mu.Unlock()
 		imp = cache.New(&req.Context, req.Filename)
 	}
 
