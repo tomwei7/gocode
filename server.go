@@ -96,7 +96,7 @@ func (s *Server) AutoComplete(req *AutoCompleteRequest, res *AutoCompleteReply) 
 	} else {
 		cache.Mu.Lock()
 		defer cache.Mu.Unlock()
-		imp = cache.New(&req.Context, req.Filename)
+		imp = cache.NewImporter(&req.Context, req.Filename)
 	}
 
 	cfg := suggest.Config{

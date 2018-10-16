@@ -19,7 +19,7 @@ import (
 // intended, so use a lock to protect against concurrent accesses.
 var buildDefaultLock sync.Mutex
 
-// Must be held while using the cache importer.
+// Mu must be held while using the cache importer.
 var Mu sync.Mutex
 
 var importCache = importerCache{
@@ -27,7 +27,7 @@ var importCache = importerCache{
 	imports: make(map[string]importCacheEntry),
 }
 
-func New(ctx *PackedContext, filename string) types.ImporterFrom {
+func NewImporter(ctx *PackedContext, filename string) types.ImporterFrom {
 	importCache.clean()
 
 	imp := &importer{
