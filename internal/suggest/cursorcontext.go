@@ -270,8 +270,7 @@ func deduceCursorContext(file []byte, cursor int) (cursorContext, string, string
 
 	// See if we have a partial identifier to work with.
 	var partial string
-	tok := iter.token()
-	switch {
+	switch tok := iter.token(); {
 	case tok.tok.IsKeyword(), tok.tok == token.IDENT:
 		// we're '<whatever>.<ident>'
 		// parse <ident> as Partial and figure out decl
