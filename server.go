@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"go/importer"
 	"go/types"
 	"log"
 	"net"
@@ -13,6 +12,7 @@ import (
 	"runtime/debug"
 	"time"
 
+	"github.com/mdempsky/gocode/internal/cache"
 	"github.com/mdempsky/gocode/internal/gbimporter"
 	"github.com/mdempsky/gocode/internal/suggest"
 )
@@ -55,7 +55,7 @@ type AutoCompleteRequest struct {
 	Filename   string
 	Data       []byte
 	Cursor     int
-	Context    gbimporter.PackedContext
+	Context    cache.PackedContext
 	Source     bool
 	Builtin    bool
 	IgnoreCase bool
@@ -89,14 +89,18 @@ func (s *Server) AutoComplete(req *AutoCompleteRequest, res *AutoCompleteReply) 
 		log.Println("-------------------------------------------------------")
 	}
 	now := time.Now()
-	var underlying types.ImporterFrom
+
+	var imp types.ImporterFrom
 	if req.Source {
-		underlying = importer.For("source", nil).(types.ImporterFrom)
+		imp = gbimporter.New(&req.Context, req.Filename)
 	} else {
-		underlying = importer.Default().(types.ImporterFrom)
+		cache.Mu.Lock()
+		defer cache.Mu.Unlock()
+		imp = cache.NewImporter(&req.Context, req.Filename)
 	}
+
 	cfg := suggest.Config{
-		Importer:   gbimporter.New(&req.Context, req.Filename, underlying),
+		Importer:   imp,
 		Builtin:    req.Builtin,
 		IgnoreCase: req.IgnoreCase,
 	}
