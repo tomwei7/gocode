@@ -258,7 +258,7 @@ type cursorContext int
 
 const (
 	unknownContext cursorContext = iota
-	noResultsContext
+	emptyResultsContext
 	selectContext
 	compositeLiteralContext
 )
@@ -291,7 +291,7 @@ func deduceCursorContext(file []byte, cursor int) (cursorContext, string, string
 	}
 	switch tok.tok {
 	case token.FLOAT, token.INT, token.IMAG, token.CHAR, token.STRING:
-		return noResultsContext, "", ""
+		return emptyResultsContext, "", ""
 	}
 	switch iter.token().tok {
 	case token.PERIOD:

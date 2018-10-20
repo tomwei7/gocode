@@ -87,8 +87,8 @@ func (c *Config) Suggest(filename string, data []byte, cursor int) ([]Candidate,
 		}
 
 		fallthrough
-	case noResultsContext:
-		// don't show results in certain cases
+	case emptyResultsContext:
+		fallthrough // don't show results in certain cases
 	case unknownContext:
 		c.scopeCandidates(scope, pos, &b)
 	}
