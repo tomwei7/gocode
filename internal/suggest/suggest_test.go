@@ -83,7 +83,6 @@ func testRegress(t *testing.T, testDir string) {
 
 	var out bytes.Buffer
 	suggest.NiceFormat(&out, candidates, prefixLen)
-
 	want, _ := ioutil.ReadFile(filepath.Join(testDir, "out.expected"))
 	if got := out.Bytes(); !bytes.Equal(got, want) {
 		t.Errorf("%s:\nGot:\n%s\nWant:\n%s\n", testDir, got, want)

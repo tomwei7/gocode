@@ -291,7 +291,7 @@ func deduceCursorContext(file []byte, cursor int) (cursorContext, string, string
 	}
 	switch tok.tok {
 	case token.FLOAT, token.INT, token.IMAG, token.CHAR, token.STRING:
-		return emptyResultsContext, "", ""
+		return emptyResultsContext, "", partial
 	}
 	switch iter.token().tok {
 	case token.PERIOD:
@@ -302,6 +302,5 @@ func deduceCursorContext(file []byte, cursor int) (cursorContext, string, string
 		// Let's try to find the struct type
 		return compositeLiteralContext, iter.extractLiteralType(), partial
 	}
-
 	return unknownContext, "", partial
 }

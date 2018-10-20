@@ -63,6 +63,10 @@ func (c *Config) Suggest(filename string, data []byte, cursor int) ([]Candidate,
 	}
 
 	switch ctx {
+	case emptyResultsContext:
+		// don't show results in certain cases
+		return nil, 0
+
 	case selectContext:
 		tv, _ := types.Eval(fset, pkg, pos, expr)
 		if lookdot.Walk(&tv, b.appendObject) {
@@ -85,10 +89,7 @@ func (c *Config) Suggest(filename string, data []byte, cursor int) ([]Candidate,
 				break
 			}
 		}
-
 		fallthrough
-	case emptyResultsContext:
-		fallthrough // don't show results in certain cases
 	case unknownContext:
 		c.scopeCandidates(scope, pos, &b)
 	}
