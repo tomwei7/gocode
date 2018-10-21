@@ -130,6 +130,7 @@ func cmdAutoComplete(c *rpc.Client) {
 	req.Source = *g_source
 	req.Builtin = *g_builtin
 	req.IgnoreCase = *g_ignore_case
+	req.UnimportedPackages = *g_unimported_packages
 
 	var res AutoCompleteReply
 	var err error
