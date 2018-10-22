@@ -19,10 +19,11 @@ import (
 )
 
 type Config struct {
-	Importer   types.Importer
-	Logf       func(fmt string, args ...interface{})
-	Builtin    bool
-	IgnoreCase bool
+	Importer           types.Importer
+	Logf               func(fmt string, args ...interface{})
+	Builtin            bool
+	IgnoreCase         bool
+	UnimportedPackages bool
 }
 
 var cache = struct {
@@ -78,8 +79,14 @@ func (c *Config) Suggest(filename string, data []byte, cursor int) ([]Candidate,
 			c.packageCandidates(pkgName.Imported(), &b)
 			break
 		}
-
-		return nil, 0
+		if !c.UnimportedPackages {
+			return nil, 0
+		}
+		pkg := c.resolveKnownPackageIdent(expr)
+		if pkg == nil {
+			return nil, 0
+		}
+		c.packageCandidates(pkg, &b)
 
 	case compositeLiteralContext:
 		tv, _ := types.Eval(fset, pkg, pos, expr)
@@ -287,6 +294,15 @@ func (c *Config) findOtherPackageFiles(filename, pkgName string) []string {
 	}
 
 	return out
+}
+
+func (c *Config) resolveKnownPackageIdent(pkgName string) *types.Package {
+	pkgName, ok := knownPackageIdents[pkgName]
+	if !ok {
+		return nil
+	}
+	pkg, _ := c.Importer.Import(pkgName)
+	return pkg
 }
 
 func pkgNameFor(filename string) string {
