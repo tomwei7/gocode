@@ -15,9 +15,9 @@ var (
 	g_addr                = flag.String("addr", "127.0.0.1:37373", "address for tcp socket")
 	g_debug               = flag.Bool("debug", false, "enable server-side debug mode")
 	g_source              = flag.Bool("source", false, "use source importer")
-	g_builtin             = flag.Bool("builtin", false, "propose builtin objects")
+	g_builtin             = flag.Bool("builtin", false, "propose completions for built-in functions and types")
 	g_ignore_case         = flag.Bool("ignore-case", false, "do case-insensitive matching")
-	g_unimported_packages = flag.Bool("unimported-packages", false, "include unimported packages")
+	g_unimported_packages = flag.Bool("unimported-packages", false, "propose completions for standard library packages not explicitly imported")
 )
 
 func getSocketPath() string {
