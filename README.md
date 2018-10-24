@@ -33,6 +33,8 @@ Also watch the [demo screencast](http://nosmileface.ru/images/gocode-demo.swf).
     `go get -u -ldflags -H=windowsgui github.com/mdempsky/gocode`
 
     That way on the Windows OS gocode will be built as a GUI application and doing so solves hanging window issues with some of the editors.
+    
+    **Note: If you are updating your version of gocode, you will need to run `gocode close` to restart it.**
 
  3. Next steps are editor specific. See below.
 
