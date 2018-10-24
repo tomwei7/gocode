@@ -18,6 +18,7 @@ var (
 	g_builtin             = flag.Bool("builtin", false, "propose completions for built-in functions and types")
 	g_ignore_case         = flag.Bool("ignore-case", false, "do case-insensitive matching")
 	g_unimported_packages = flag.Bool("unimported-packages", false, "propose completions for standard library packages not explicitly imported")
+	g_fallback_to_source  = flag.Bool("fallback-to-source", false, "if importing a package fails, fallback to the source importer")
 )
 
 func getSocketPath() string {

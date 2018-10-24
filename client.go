@@ -131,6 +131,7 @@ func cmdAutoComplete(c *rpc.Client) {
 	req.Builtin = *g_builtin
 	req.IgnoreCase = *g_ignore_case
 	req.UnimportedPackages = *g_unimported_packages
+	req.FallbackToSource = *g_fallback_to_source
 
 	var res AutoCompleteReply
 	var err error

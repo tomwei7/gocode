@@ -60,6 +60,7 @@ type AutoCompleteRequest struct {
 	Builtin            bool
 	IgnoreCase         bool
 	UnimportedPackages bool
+	FallbackToSource   bool
 }
 
 type AutoCompleteReply struct {
@@ -97,7 +98,7 @@ func (s *Server) AutoComplete(req *AutoCompleteRequest, res *AutoCompleteReply) 
 	} else {
 		cache.Mu.Lock()
 		defer cache.Mu.Unlock()
-		imp = cache.NewImporter(&req.Context, req.Filename)
+		imp = cache.NewImporter(&req.Context, req.Filename, req.FallbackToSource)
 	}
 
 	cfg := suggest.Config{

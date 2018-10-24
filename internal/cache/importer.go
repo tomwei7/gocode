@@ -27,12 +27,13 @@ var importCache = importerCache{
 	imports: make(map[string]importCacheEntry),
 }
 
-func NewImporter(ctx *PackedContext, filename string) types.ImporterFrom {
+func NewImporter(ctx *PackedContext, filename string, fallbackToSource bool) types.ImporterFrom {
 	importCache.clean()
 
 	imp := &importer{
-		ctx:           ctx,
-		importerCache: &importCache,
+		ctx:              ctx,
+		importerCache:    &importCache,
+		fallbackToSource: fallbackToSource,
 	}
 
 	slashed := filepath.ToSlash(filename)
@@ -66,6 +67,7 @@ type importer struct {
 	*importerCache
 	gbroot, gbvendor string
 	ctx              *PackedContext
+	fallbackToSource bool
 }
 
 type importerCache struct {
@@ -115,13 +117,16 @@ func (i *importer) ImportFrom(importPath, srcDir string, mode types.ImportMode) 
 		if ok && time.Since(entry.mtime) <= time.Minute*20 {
 			return entry.pkg, nil
 		}
-		// If there is no cache entry, import and cache using the source importer.
-		pkg, err := goimporter.For("source", nil).Import(path)
-		if pkg != nil {
-			entry = importCacheEntry{pkg, time.Now()}
-			i.imports[path] = entry
+		// If there is no cache entry and the user has configured the correct
+		// setting, import and cache using the source importer.
+		if i.fallbackToSource {
+			pkg, err := goimporter.For("source", nil).Import(path)
+			if pkg != nil {
+				entry = importCacheEntry{pkg, time.Now()}
+				i.imports[path] = entry
+			}
+			return pkg, err
 		}
-		return pkg, err
 	}
 
 	// If there is export data for the package.
