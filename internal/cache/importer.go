@@ -121,11 +121,12 @@ func (i *importer) ImportFrom(importPath, srcDir string, mode types.ImportMode) 
 		// setting, import and cache using the source importer.
 		if i.fallbackToSource {
 			pkg, err := goimporter.For("source", nil).Import(path)
-			if pkg != nil {
-				entry = importCacheEntry{pkg, time.Now()}
-				i.imports[path] = entry
+			if pkg == nil {
+				return nil, err
 			}
-			return pkg, err
+			entry = importCacheEntry{pkg, time.Now()}
+			i.imports[path] = entry
+			return entry.pkg, nil
 		}
 	}
 
