@@ -1,5 +1,9 @@
 [![Build Status](https://travis-ci.org/mdempsky/gocode.svg?branch=master)](https://travis-ci.org/mdempsky/gocode)
 
+## github.com/mdempsky/gocode
+
+This version of gocode is a fork of the [original](https://github.com/nsf/gocode), which is no longer supported. This fork should work for all versions of Go >= 1.8. It only works for `$GOPATH` projects. For a version of gocode that works with Modules, please see [github.com/stamblerre/gocode](https://github.com/stamblerre/gocode).
+
 ## An autocompletion daemon for the Go programming language
 
 Gocode is a helper tool which is intended to be integrated with your source code editor, like vim, neovim and emacs. It provides several advanced capabilities, which currently includes:
