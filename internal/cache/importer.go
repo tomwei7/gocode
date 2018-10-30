@@ -128,6 +128,7 @@ func (i *importer) ImportFrom(importPath, srcDir string, mode types.ImportMode) 
 			i.imports[path] = entry
 			return entry.pkg, nil
 		}
+		return nil, fmt.Errorf("no export data for %s", path)
 	}
 
 	// If there is export data for the package.
