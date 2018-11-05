@@ -119,16 +119,19 @@ func (i *importer) ImportFrom(importPath, srcDir string, mode types.ImportMode) 
 		}
 		// If there is no cache entry and the user has configured the correct
 		// setting, import and cache using the source importer.
+		var pkg *types.Package
+		var err error
 		if i.fallbackToSource {
-			pkg, err := goimporter.For("source", nil).Import(path)
-			if pkg == nil {
-				return nil, err
-			}
-			entry = importCacheEntry{pkg, time.Now()}
-			i.imports[path] = entry
-			return entry.pkg, nil
+			pkg, err = goimporter.For("source", nil).Import(path)
+		} else {
+			pkg, err = goimporter.Default().Import(path)
 		}
-		return nil, fmt.Errorf("no export data for %s", path)
+		if pkg == nil {
+			return nil, err
+		}
+		entry = importCacheEntry{pkg, time.Now()}
+		i.imports[path] = entry
+		return entry.pkg, nil
 	}
 
 	// If there is export data for the package.
