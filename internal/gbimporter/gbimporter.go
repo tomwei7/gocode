@@ -3,7 +3,6 @@ package gbimporter
 import (
 	"fmt"
 	"go/build"
-	goimporter "go/importer"
 	"go/types"
 	"path/filepath"
 	"strings"
@@ -19,14 +18,16 @@ var buildDefaultLock sync.Mutex
 // importer implements types.ImporterFrom and provides transparent
 // support for gb-based projects.
 type importer struct {
-	ctx     *cache.PackedContext
-	gbroot  string
-	gbpaths []string
+	ctx        *cache.PackedContext
+	gbroot     string
+	gbpaths    []string
+	underlying types.ImporterFrom
 }
 
-func New(ctx *cache.PackedContext, filename string) types.ImporterFrom {
+func New(ctx *cache.PackedContext, filename string, underlying types.Importer) types.ImporterFrom {
 	imp := &importer{
-		ctx: ctx,
+		ctx:        ctx,
+		underlying: underlying.(types.ImporterFrom),
 	}
 	slashed := filepath.ToSlash(filename)
 	i := strings.LastIndex(slashed, "/vendor/src/")
@@ -81,7 +82,7 @@ func (i *importer) ImportFrom(path, srcDir string, mode types.ImportMode) (*type
 	def.SplitPathList = i.splitPathList
 	def.JoinPath = i.joinPath
 
-	return goimporter.For("source", nil).Import(path)
+	return i.underlying.ImportFrom(path, srcDir, mode)
 }
 
 func (i *importer) splitPathList(list string) []string {

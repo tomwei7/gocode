@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"go/importer"
 	"go/types"
 	"log"
 	"net"
@@ -17,7 +18,7 @@ import (
 	"github.com/mdempsky/gocode/internal/suggest"
 )
 
-func doServer() {
+func doServer(cache bool) {
 	addr := *g_addr
 	if *g_sock == "unix" {
 		addr = getSocketPath()
@@ -35,7 +36,9 @@ func doServer() {
 		exitServer()
 	}()
 
-	if err = rpc.Register(&Server{}); err != nil {
+	if err = rpc.Register(&Server{
+		cache: cache,
+	}); err != nil {
 		log.Fatal(err)
 	}
 	rpc.Accept(lis)
@@ -49,6 +52,7 @@ func exitServer() {
 }
 
 type Server struct {
+	cache bool
 }
 
 type AutoCompleteRequest struct {
@@ -94,11 +98,13 @@ func (s *Server) AutoComplete(req *AutoCompleteRequest, res *AutoCompleteReply) 
 
 	var imp types.ImporterFrom
 	if req.Source {
-		imp = gbimporter.New(&req.Context, req.Filename)
-	} else {
+		imp = gbimporter.New(&req.Context, req.Filename, importer.For("source", nil))
+	} else if s.cache {
 		cache.Mu.Lock()
 		defer cache.Mu.Unlock()
 		imp = cache.NewImporter(&req.Context, req.Filename, req.FallbackToSource)
+	} else {
+		imp = gbimporter.New(&req.Context, req.Filename, importer.Default())
 	}
 
 	cfg := suggest.Config{
