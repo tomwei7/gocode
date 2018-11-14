@@ -105,17 +105,17 @@ func (s *Server) AutoComplete(req *AutoCompleteRequest, res *AutoCompleteReply) 
 	}
 	if req.Source {
 		cfg.Importer = gbimporter.New(&req.Context, req.Filename, importer.For("source", nil), func(s string, args ...interface{}) {
-			cfg.Logf("source: "+s, args)
+			cfg.Logf("source: "+s, args...)
 		})
 	} else if s.cache {
 		cache.Mu.Lock()
 		defer cache.Mu.Unlock()
 		cfg.Importer = cache.NewImporter(&req.Context, req.Filename, req.FallbackToSource, func(s string, args ...interface{}) {
-			cfg.Logf("cache: "+s, args)
+			cfg.Logf("cache: "+s, args...)
 		})
 	} else {
 		cfg.Importer = gbimporter.New(&req.Context, req.Filename, importer.Default(), func(s string, args ...interface{}) {
-			cfg.Logf("gbimporter: "+s, args)
+			cfg.Logf("gbimporter: "+s, args...)
 		})
 	}
 	candidates, d := cfg.Suggest(req.Filename, req.Data, req.Cursor)
