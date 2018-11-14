@@ -22,12 +22,14 @@ type importer struct {
 	gbroot     string
 	gbpaths    []string
 	underlying types.ImporterFrom
+	logf       func(string, ...interface{})
 }
 
-func New(ctx *cache.PackedContext, filename string, underlying types.Importer) types.ImporterFrom {
+func New(ctx *cache.PackedContext, filename string, underlying types.Importer, logger func(string, ...interface{})) types.ImporterFrom {
 	imp := &importer{
 		ctx:        ctx,
 		underlying: underlying.(types.ImporterFrom),
+		logf:       logger,
 	}
 	slashed := filepath.ToSlash(filename)
 	i := strings.LastIndex(slashed, "/vendor/src/")
@@ -82,7 +84,12 @@ func (i *importer) ImportFrom(path, srcDir string, mode types.ImportMode) (*type
 	def.SplitPathList = i.splitPathList
 	def.JoinPath = i.joinPath
 
-	return i.underlying.ImportFrom(path, srcDir, mode)
+	pkg, err := i.underlying.ImportFrom(path, srcDir, mode)
+	if err != nil {
+		i.logf("no package found for %s: %v", path, err)
+		return nil, err
+	}
+	return pkg, nil
 }
 
 func (i *importer) splitPathList(list string) []string {

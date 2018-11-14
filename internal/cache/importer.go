@@ -27,13 +27,14 @@ var importCache = importerCache{
 	imports: make(map[string]importCacheEntry),
 }
 
-func NewImporter(ctx *PackedContext, filename string, fallbackToSource bool) types.ImporterFrom {
+func NewImporter(ctx *PackedContext, filename string, fallbackToSource bool, logger func(string, ...interface{})) types.ImporterFrom {
 	importCache.clean()
 
 	imp := &importer{
 		ctx:              ctx,
 		importerCache:    &importCache,
 		fallbackToSource: fallbackToSource,
+		logf:             logger,
 	}
 
 	slashed := filepath.ToSlash(filename)
@@ -68,6 +69,7 @@ type importer struct {
 	gbroot, gbvendor string
 	ctx              *PackedContext
 	fallbackToSource bool
+	logf             func(string, ...interface{})
 }
 
 type importerCache struct {
@@ -112,6 +114,7 @@ func (i *importer) ImportFrom(importPath, srcDir string, mode types.ImportMode) 
 	filename, path := gcexportdata.Find(importPath, srcDir)
 	entry, ok := i.imports[path]
 	if filename == "" {
+		i.logf("no gcexportdata file for %s", path)
 		// If there is no export data, check the cache.
 		// TODO(rstambler): Develop a better heuristic for entry eviction.
 		if ok && time.Since(entry.mtime) <= time.Minute*20 {
@@ -127,6 +130,7 @@ func (i *importer) ImportFrom(importPath, srcDir string, mode types.ImportMode) 
 			pkg, err = goimporter.Default().Import(path)
 		}
 		if pkg == nil {
+			i.logf("failed to fall back to another importer for %s: %v", pkg, err)
 			return nil, err
 		}
 		entry = importCacheEntry{pkg, time.Now()}
@@ -137,6 +141,7 @@ func (i *importer) ImportFrom(importPath, srcDir string, mode types.ImportMode) 
 	// If there is export data for the package.
 	fi, err := os.Stat(filename)
 	if err != nil {
+		i.logf("could not stat %s", filename)
 		return nil, err
 	}
 	if entry.mtime != fi.ModTime() {

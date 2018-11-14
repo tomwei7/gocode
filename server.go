@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"go/importer"
-	"go/types"
 	"log"
 	"net"
 	"net/rpc"
@@ -95,26 +94,29 @@ func (s *Server) AutoComplete(req *AutoCompleteRequest, res *AutoCompleteReply) 
 		log.Println("-------------------------------------------------------")
 	}
 	now := time.Now()
-
-	var imp types.ImporterFrom
-	if req.Source {
-		imp = gbimporter.New(&req.Context, req.Filename, importer.For("source", nil))
-	} else if s.cache {
-		cache.Mu.Lock()
-		defer cache.Mu.Unlock()
-		imp = cache.NewImporter(&req.Context, req.Filename, req.FallbackToSource)
-	} else {
-		imp = gbimporter.New(&req.Context, req.Filename, importer.Default())
-	}
-
 	cfg := suggest.Config{
-		Importer:           imp,
 		Builtin:            req.Builtin,
 		IgnoreCase:         req.IgnoreCase,
 		UnimportedPackages: req.UnimportedPackages,
+		Logf:               func(string, ...interface{}) {},
 	}
 	if *g_debug {
 		cfg.Logf = log.Printf
+	}
+	if req.Source {
+		cfg.Importer = gbimporter.New(&req.Context, req.Filename, importer.For("source", nil), func(s string, args ...interface{}) {
+			cfg.Logf("source: "+s, args)
+		})
+	} else if s.cache {
+		cache.Mu.Lock()
+		defer cache.Mu.Unlock()
+		cfg.Importer = cache.NewImporter(&req.Context, req.Filename, req.FallbackToSource, func(s string, args ...interface{}) {
+			cfg.Logf("cache: "+s, args)
+		})
+	} else {
+		cfg.Importer = gbimporter.New(&req.Context, req.Filename, importer.Default(), func(s string, args ...interface{}) {
+			cfg.Logf("gbimporter: "+s, args)
+		})
 	}
 	candidates, d := cfg.Suggest(req.Filename, req.Data, req.Cursor)
 	elapsed := time.Since(now)

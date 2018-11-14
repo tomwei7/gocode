@@ -66,6 +66,7 @@ func testRegress(t *testing.T, testDir string) {
 
 	cfg := suggest.Config{
 		Importer: importer.Default(),
+		Logf:     func(string, ...interface{}) {},
 	}
 	if testing.Verbose() {
 		cfg.Logf = t.Logf
