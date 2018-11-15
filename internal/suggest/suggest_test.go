@@ -68,6 +68,7 @@ func testRegress(t *testing.T, testDir string) {
 		Importer: importer.Default(),
 		Logf:     func(string, ...interface{}) {},
 	}
+	cfg.Logf = func(string, ...interface{}) {}
 	if testing.Verbose() {
 		cfg.Logf = t.Logf
 	}

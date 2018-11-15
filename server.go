@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"go/build"
 	"go/importer"
 	"log"
 	"net"
@@ -100,8 +101,13 @@ func (s *Server) AutoComplete(req *AutoCompleteRequest, res *AutoCompleteReply) 
 		UnimportedPackages: req.UnimportedPackages,
 		Logf:               func(string, ...interface{}) {},
 	}
+	cfg.Logf = func(string, ...interface{}) {}
 	if *g_debug {
 		cfg.Logf = log.Printf
+	}
+	// TODO(rstambler): Figure out why this happens sometimes.
+	if req.Context.GOPATH == "" || req.Context.GOROOT == "" {
+		req.Context = cache.PackContext(&build.Default)
 	}
 	if req.Source {
 		cfg.Importer = gbimporter.New(&req.Context, req.Filename, importer.For("source", nil), func(s string, args ...interface{}) {
@@ -118,6 +124,7 @@ func (s *Server) AutoComplete(req *AutoCompleteRequest, res *AutoCompleteReply) 
 			cfg.Logf("gbimporter: "+s, args...)
 		})
 	}
+
 	candidates, d := cfg.Suggest(req.Filename, req.Data, req.Cursor)
 	elapsed := time.Since(now)
 	if *g_debug {

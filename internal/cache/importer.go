@@ -111,6 +111,7 @@ func (i *importer) ImportFrom(importPath, srcDir string, mode types.ImportMode) 
 	def.SplitPathList = i.splitPathList
 	def.JoinPath = i.joinPath
 
+	i.logf("importing: %v, srcdir: %v", importPath, srcDir)
 	filename, path := gcexportdata.Find(importPath, srcDir)
 	entry, ok := i.imports[path]
 	if filename == "" {
@@ -125,8 +126,10 @@ func (i *importer) ImportFrom(importPath, srcDir string, mode types.ImportMode) 
 		var pkg *types.Package
 		var err error
 		if i.fallbackToSource {
+			i.logf("cache: falling back to the source importer for %s", path)
 			pkg, err = goimporter.For("source", nil).Import(path)
 		} else {
+			i.logf("cache: falling back to the source default for %s", path)
 			pkg, err = goimporter.Default().Import(path)
 		}
 		if pkg == nil {

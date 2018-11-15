@@ -37,18 +37,22 @@ func New(ctx *cache.PackedContext, filename string, underlying types.Importer, l
 		i = strings.LastIndex(slashed, "/src/")
 	}
 	if i > 0 {
-		paths := filepath.SplitList(imp.ctx.GOPATH)
-
 		gbroot := filepath.FromSlash(slashed[:i])
 		gbvendor := filepath.Join(gbroot, "vendor")
 
+		paths := filepath.SplitList(imp.ctx.GOPATH)
+		if len(paths) == 0 {
+			goto Found
+		}
+
 		// If there is a slash at end of GOROOT or GOPATH, we'll
 		// consider this file is inside a gb project wrongly.
-		if cache.SamePath(gbroot, imp.ctx.GOROOT) {
+		if trimmedGoroot := strings.TrimRight(imp.ctx.GOROOT, "\\/"); cache.SamePath(gbroot, trimmedGoroot) {
 			goto Found
 		}
 		for _, path := range paths {
-			if cache.SamePath(path, gbroot) || cache.SamePath(path, gbvendor) {
+			trimmed := strings.TrimRight(path, "\\/")
+			if cache.SamePath(trimmed, gbroot) || cache.SamePath(trimmed, gbvendor) {
 				goto Found
 			}
 		}
