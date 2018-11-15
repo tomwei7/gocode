@@ -44,12 +44,11 @@ func New(ctx *cache.PackedContext, filename string, underlying types.Importer, l
 
 		// If there is a slash at end of GOROOT or GOPATH, we'll
 		// consider this file is inside a gb project wrongly.
-		if cache.SamePath(gbroot, strings.TrimRight(imp.ctx.GOROOT, "\\/")) {
+		if cache.SamePath(gbroot, imp.ctx.GOROOT) {
 			goto Found
 		}
 		for _, path := range paths {
-			pathNoLastSlash := strings.TrimRight(path, "\\/")
-			if cache.SamePath(pathNoLastSlash, gbroot) || cache.SamePath(pathNoLastSlash, gbvendor) {
+			if cache.SamePath(path, gbroot) || cache.SamePath(path, gbvendor) {
 				goto Found
 			}
 		}
