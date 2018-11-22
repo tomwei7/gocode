@@ -36,31 +36,10 @@ func NewImporter(ctx *PackedContext, filename string, fallbackToSource bool, log
 		fallbackToSource: fallbackToSource,
 		logf:             logger,
 	}
-
-	slashed := filepath.ToSlash(filename)
-	i := strings.LastIndex(slashed, "/vendor/src/")
-	if i < 0 {
-		i = strings.LastIndex(slashed, "/src/")
+	gbroot, gbvendor := GetGbProjectPaths(ctx, filename)
+	if gbroot != "" {
+		imp.gbroot, imp.gbvendor = gbroot, gbvendor
 	}
-	if i > 0 {
-		paths := filepath.SplitList(imp.ctx.GOPATH)
-
-		gbroot := filepath.FromSlash(slashed[:i])
-		gbvendor := filepath.Join(gbroot, "vendor")
-		if SamePath(gbroot, imp.ctx.GOROOT) {
-			goto Found
-		}
-		for _, path := range paths {
-			if SamePath(path, gbroot) || SamePath(path, gbvendor) {
-				goto Found
-			}
-		}
-
-		imp.gbroot = gbroot
-		imp.gbvendor = gbvendor
-	Found:
-	}
-
 	return imp
 }
 
@@ -215,4 +194,39 @@ func (i *importer) joinPath(elem ...string) string {
 func match(s, prefix string) (string, bool) {
 	rest := strings.TrimPrefix(s, prefix)
 	return rest, len(rest) < len(s)
+}
+
+// GetGbProjectPaths checks whether we'are in a gb project and returns
+// gbroot and gbvendor
+func GetGbProjectPaths(ctx *PackedContext, filename string) (string, string) {
+	slashed := filepath.ToSlash(filename)
+	i := strings.LastIndex(slashed, "/vendor/src/")
+	if i < 0 {
+		i = strings.LastIndex(slashed, "/src/")
+	}
+	if i > 0 {
+		gbroot := filepath.FromSlash(slashed[:i])
+		gbvendor := filepath.Join(gbroot, "vendor")
+
+		paths := filepath.SplitList(ctx.GOPATH)
+		if len(paths) == 0 {
+			return "", ""
+		}
+
+		// If there is a slash at end of GOROOT or GOPATH, we'll
+		// consider this file is inside a gb project wrongly.
+		if trimmedGoroot := strings.TrimRight(ctx.GOROOT, "\\/"); SamePath(gbroot, trimmedGoroot) {
+			return "", ""
+		}
+		for _, path := range paths {
+			trimmed := strings.TrimRight(path, "\\/")
+			if SamePath(trimmed, gbroot) || SamePath(trimmed, gbvendor) {
+				return "", ""
+			}
+		}
+
+		return gbroot, gbvendor
+	}
+
+	return "", ""
 }
