@@ -67,7 +67,7 @@ func (i *importer) ImportFrom(path, srcDir string, mode types.ImportMode) (*type
 	def.JoinPath = i.joinPath
 
 	pkg, err := i.underlying.ImportFrom(path, srcDir, mode)
-	if err != nil {
+	if pkg == nil {
 		i.logf("no package found for %s: %v", path, err)
 		return nil, err
 	}

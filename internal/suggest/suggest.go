@@ -308,5 +308,8 @@ func (c *Config) resolveKnownPackageIdent(pkgName string) *types.Package {
 
 func pkgNameFor(filename string) string {
 	file, _ := parser.ParseFile(token.NewFileSet(), filename, nil, parser.PackageClauseOnly)
+	if file == nil {
+		return ""
+	}
 	return file.Name.Name
 }
