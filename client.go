@@ -87,6 +87,9 @@ func doClient() {
 func tryStartServer() error {
 	path := get_executable_filename()
 	args := []string{os.Args[0], "-s", "-sock", *g_sock, "-addr", *g_addr}
+	if *g_cache {
+		args = append(args, "-cache")
+	}
 	cwd, _ := os.Getwd()
 
 	var err error
