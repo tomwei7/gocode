@@ -9,10 +9,11 @@ import (
 )
 
 type Candidate struct {
-	Class   string `json:"class"`
-	PkgPath string `json:"package"`
-	Name    string `json:"name"`
-	Type    string `json:"type"`
+	Class    string `json:"class"`
+	PkgPath  string `json:"package"`
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Receiver string `json:"receiver"`
 }
 
 func (c Candidate) Suggestion() string {
@@ -129,11 +130,19 @@ func (b *candidateCollector) asCandidate(obj types.Object) Candidate {
 		path = pkg.Path()
 	}
 
+	receiver := ""
+	if sig, ok := typ.(*types.Signature); ok {
+		if receiverVar := sig.Recv(); receiverVar != nil {
+			receiver = types.TypeString(receiverVar.Type(), func(*types.Package) string { return "" })
+		}
+	}
+
 	return Candidate{
-		Class:   objClass,
-		PkgPath: path,
-		Name:    obj.Name(),
-		Type:    typStr,
+		Class:    objClass,
+		PkgPath:  path,
+		Name:     obj.Name(),
+		Type:     typStr,
+		Receiver: receiver,
 	}
 }
 
