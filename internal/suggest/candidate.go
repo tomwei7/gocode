@@ -13,7 +13,7 @@ type Candidate struct {
 	PkgPath  string `json:"package"`
 	Name     string `json:"name"`
 	Type     string `json:"type"`
-	Receiver string `json:"receiver"`
+	Receiver string `json:"receiver,omitempty"`
 }
 
 func (c Candidate) Suggestion() string {
