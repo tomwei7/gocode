@@ -131,12 +131,10 @@ func (b *candidateCollector) asCandidate(obj types.Object) Candidate {
 	}
 
 	var receiver string
-	if sig, ok := typ.(*types.Signature); ok {
-		if sig.Recv() != nil {
-			receiver = types.TypeString(sig.Recv().Type(), func(*types.Package) string {
-				return ""
-			})
-		}
+	if sig, ok := typ.(*types.Signature); ok && sig.Recv() != nil {
+		receiver = types.TypeString(sig.Recv().Type(), func(*types.Package) string {
+			return ""
+		})
 	}
 
 	return Candidate{
