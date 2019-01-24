@@ -18,15 +18,6 @@
 (require 'go-mode)
 (require 'company)
 
-;; Close gocode daemon at exit unless it was already running
-(eval-after-load "go-mode"
-  '(progn
-     (let* ((user (or (getenv "USER") "all"))
-            (sock (format (concat temporary-file-directory "gocode-daemon.%s") user)))
-       (unless (file-exists-p sock)
-         (add-hook 'kill-emacs-hook #'(lambda ()
-                                        (ignore-errors
-                                          (call-process company-go-gocode-command nil nil nil "close"))))))))
 
 (defgroup company-go nil
   "Completion back-end for Go."
@@ -67,6 +58,20 @@ symbol is preceded by a \".\", ignoring `company-minimum-prefix-length'."
   "Arguments to pass to `go doc'."
   :group 'company-go
   :type 'string)
+
+
+(defun company-go--close-daemon ()
+  "Close gocode daemon."
+  (ignore-errors
+    (call-process company-go-gocode-command nil nil nil "close")))
+
+;; Close gocode daemon at exit unless it was already running
+(eval-after-load "go-mode"
+  '(progn
+     (let* ((user (or (getenv "USER") "all"))
+            (sock (format (concat temporary-file-directory "gocode-daemon.%s") user)))
+       (unless (file-exists-p sock)
+         (add-hook 'kill-emacs-hook #'company-go--close-daemon)))))
 
 (defun company-go--invoke-autocomplete ()
   (let ((code-buffer (current-buffer))
