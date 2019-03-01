@@ -3,7 +3,6 @@ package gbimporter
 import (
 	"fmt"
 	"go/build"
-	goimporter "go/importer"
 	"go/types"
 	"io/ioutil"
 	"log"
@@ -13,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/mdempsky/gocode/internal/cache"
 )
 
 type installedInfo struct {
@@ -30,47 +31,28 @@ func init() {
 // intended, so use a lock to protect against concurrent accesses.
 var buildDefaultLock sync.Mutex
 
-var srcImporter types.ImporterFrom = goimporter.For("source", nil).(types.ImporterFrom)
-
 // importer implements types.ImporterFrom and provides transparent
 // support for gb-based projects.
 type importer struct {
-	underlying types.ImporterFrom
-	ctx        *PackedContext
+	ctx        *cache.PackedContext
 	gbroot     string
 	gbpaths    []string
+	underlying types.ImporterFrom
+	logf       func(string, ...interface{})
 }
 
-func New(ctx *PackedContext, filename string, underlying types.ImporterFrom) types.ImporterFrom {
+func New(ctx *cache.PackedContext, filename string, underlying types.Importer, logger func(string, ...interface{})) types.ImporterFrom {
 	imp := &importer{
 		ctx:        ctx,
-		underlying: underlying,
+		underlying: underlying.(types.ImporterFrom),
+		logf:       logger,
 	}
 
-	slashed := filepath.ToSlash(filename)
-	i := strings.LastIndex(slashed, "/vendor/src/")
-	if i < 0 {
-		i = strings.LastIndex(slashed, "/src/")
-	}
-	if i > 0 {
-		paths := filepath.SplitList(imp.ctx.GOPATH)
-
-		gbroot := filepath.FromSlash(slashed[:i])
-		gbvendor := filepath.Join(gbroot, "vendor")
-		if samePath(gbroot, imp.ctx.GOROOT) {
-			goto Found
-		}
-		for _, path := range paths {
-			if samePath(path, gbroot) || samePath(path, gbvendor) {
-				goto Found
-			}
-		}
-
+	gbroot, gbvendor := cache.GetGbProjectPaths(ctx, filename)
+	if gbroot != "" {
 		imp.gbroot = gbroot
-		imp.gbpaths = append(paths, gbroot, gbvendor)
-	Found:
+		imp.gbpaths = append(filepath.SplitList(imp.ctx.GOPATH), gbroot, gbvendor)
 	}
-
 	return imp
 }
 
@@ -103,10 +85,10 @@ func (i *importer) ImportFrom(path, srcDir string, mode types.ImportMode) (*type
 
 	pkg, err := i.underlying.ImportFrom(path, srcDir, mode)
 	if pkg == nil {
-		// If importing fails, try importing with source importer.
-		pkg, _ = srcImporter.ImportFrom(path, srcDir, mode)
+		i.logf("no package found for %s: %v", path, err)
+		return nil, err
 	}
-	return pkg, err
+	return pkg, nil
 }
 
 func (i *importer) tryInstallPackage(pkgPath, srcDir string) {

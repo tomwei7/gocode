@@ -3,8 +3,8 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"go/build"
 	"go/importer"
-	"go/types"
 	"log"
 	"net"
 	"net/rpc"
@@ -13,11 +13,12 @@ import (
 	"runtime/debug"
 	"time"
 
+	"github.com/mdempsky/gocode/internal/cache"
 	"github.com/mdempsky/gocode/internal/gbimporter"
 	"github.com/mdempsky/gocode/internal/suggest"
 )
 
-func doServer() {
+func doServer(cache bool) {
 	addr := *g_addr
 	if *g_sock == "unix" {
 		addr = getSocketPath()
@@ -35,7 +36,9 @@ func doServer() {
 		exitServer()
 	}()
 
-	if err = rpc.Register(&Server{}); err != nil {
+	if err = rpc.Register(&Server{
+		cache: cache,
+	}); err != nil {
 		log.Fatal(err)
 	}
 	rpc.Accept(lis)
@@ -49,16 +52,19 @@ func exitServer() {
 }
 
 type Server struct {
+	cache bool
 }
 
 type AutoCompleteRequest struct {
-	Filename   string
-	Data       []byte
-	Cursor     int
-	Context    gbimporter.PackedContext
-	Source     bool
-	Builtin    bool
-	IgnoreCase bool
+	Filename           string
+	Data               []byte
+	Cursor             int
+	Context            cache.PackedContext
+	Source             bool
+	Builtin            bool
+	IgnoreCase         bool
+	UnimportedPackages bool
+	FallbackToSource   bool
 }
 
 type AutoCompleteReply struct {
@@ -89,20 +95,36 @@ func (s *Server) AutoComplete(req *AutoCompleteRequest, res *AutoCompleteReply) 
 		log.Println("-------------------------------------------------------")
 	}
 	now := time.Now()
-	var underlying types.ImporterFrom
-	if req.Source {
-		underlying = importer.For("source", nil).(types.ImporterFrom)
-	} else {
-		underlying = importer.Default().(types.ImporterFrom)
-	}
 	cfg := suggest.Config{
-		Importer:   gbimporter.New(&req.Context, req.Filename, underlying),
-		Builtin:    req.Builtin,
-		IgnoreCase: req.IgnoreCase,
+		Builtin:            req.Builtin,
+		IgnoreCase:         req.IgnoreCase,
+		UnimportedPackages: req.UnimportedPackages,
+		Logf:               func(string, ...interface{}) {},
 	}
+	cfg.Logf = func(string, ...interface{}) {}
 	if *g_debug {
 		cfg.Logf = log.Printf
 	}
+	// TODO(rstambler): Figure out why this happens sometimes.
+	if req.Context.GOPATH == "" || req.Context.GOROOT == "" {
+		req.Context = cache.PackContext(&build.Default)
+	}
+	if req.Source {
+		cfg.Importer = gbimporter.New(&req.Context, req.Filename, importer.For("source", nil), func(s string, args ...interface{}) {
+			cfg.Logf("source: "+s, args...)
+		})
+	} else if s.cache {
+		cache.Mu.Lock()
+		defer cache.Mu.Unlock()
+		cfg.Importer = cache.NewImporter(&req.Context, req.Filename, req.FallbackToSource, func(s string, args ...interface{}) {
+			cfg.Logf("cache: "+s, args...)
+		})
+	} else {
+		cfg.Importer = gbimporter.New(&req.Context, req.Filename, importer.Default(), func(s string, args ...interface{}) {
+			cfg.Logf("gbimporter: "+s, args...)
+		})
+	}
+
 	candidates, d := cfg.Suggest(req.Filename, req.Data, req.Cursor)
 	elapsed := time.Since(now)
 	if *g_debug {

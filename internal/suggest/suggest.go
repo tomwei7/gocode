@@ -2,23 +2,42 @@ package suggest
 
 import (
 	"bytes"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/scanner"
 	"go/token"
 	"go/types"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/mdempsky/gocode/internal/lookdot"
 )
 
 type Config struct {
-	Importer   types.Importer
-	Logf       func(fmt string, args ...interface{})
-	Builtin    bool
-	IgnoreCase bool
+	Importer           types.Importer
+	Logf               func(fmt string, args ...interface{})
+	Builtin            bool
+	IgnoreCase         bool
+	UnimportedPackages bool
+}
+
+var cache = struct {
+	lock  sync.Mutex
+	files map[string]fileCacheEntry
+	fset  *token.FileSet
+}{
+	files: make(map[string]fileCacheEntry),
+	fset:  token.NewFileSet(),
+}
+
+type fileCacheEntry struct {
+	file  *ast.File
+	mtime time.Time
 }
 
 // Suggest returns a list of suggestion candidates and the length of
@@ -30,6 +49,7 @@ func (c *Config) Suggest(filename string, data []byte, cursor int) ([]Candidate,
 
 	fset, pos, pkg, imports := c.analyzePackage(filename, data, cursor)
 	if pkg == nil {
+		c.Logf("no package found for %s", filename)
 		return nil, 0
 	}
 	scope := pkg.Scope().Innermost(pos)
@@ -44,6 +64,10 @@ func (c *Config) Suggest(filename string, data []byte, cursor int) ([]Candidate,
 		ignoreCase: c.IgnoreCase,
 	}
 	switch ctx {
+	case emptyResultsContext:
+		// don't show results in certain cases
+		return nil, 0
+
 	case selectContext:
 		tv, _ := types.Eval(fset, pkg, pos, expr)
 		if lookdot.Walk(&tv, b.appendObject) {
@@ -55,8 +79,14 @@ func (c *Config) Suggest(filename string, data []byte, cursor int) ([]Candidate,
 			c.packageCandidates(pkgName.Imported(), &b)
 			break
 		}
-
-		return nil, 0
+		if !c.UnimportedPackages {
+			return nil, 0
+		}
+		pkg := c.resolveKnownPackageIdent(expr)
+		if pkg == nil {
+			return nil, 0
+		}
+		c.packageCandidates(pkg, &b)
 
 	case compositeLiteralContext:
 		tv, _ := types.Eval(fset, pkg, pos, expr)
@@ -66,9 +96,8 @@ func (c *Config) Suggest(filename string, data []byte, cursor int) ([]Candidate,
 				break
 			}
 		}
-
 		fallthrough
-	default:
+	case unknownContext:
 		c.scopeCandidates(scope, pos, &b)
 	}
 
@@ -79,14 +108,53 @@ func (c *Config) Suggest(filename string, data []byte, cursor int) ([]Candidate,
 	return res, len(partial)
 }
 
+func (c *Config) parseOtherFile(filename string) *ast.File {
+	entry := cache.files[filename]
+
+	fi, err := os.Stat(filename)
+	if err != nil {
+		// TODO(mdempsky): How to handle this cleanly?
+		panic(err)
+	}
+
+	if entry.mtime != fi.ModTime() {
+		file, err := parser.ParseFile(cache.fset, filename, nil, 0)
+		if err != nil {
+			c.logParseError(fmt.Sprintf("Error parsing %q", filename), err)
+		}
+		trimAST(file, token.NoPos)
+
+		entry = fileCacheEntry{file, fi.ModTime()}
+		cache.files[filename] = entry
+	}
+
+	return entry.file
+}
+
 func (c *Config) analyzePackage(filename string, data []byte, cursor int) (*token.FileSet, token.Pos, *types.Package, []*ast.ImportSpec) {
+	cache.lock.Lock()
+	defer cache.lock.Unlock()
+
+	// Reset every 1GB of files so fset doesn't overflow.
+	if cache.fset.Base() >= 1e9 {
+		cache.fset = token.NewFileSet()
+		cache.files = make(map[string]fileCacheEntry)
+	}
+
+	// Delete random files to keep the cache at most 100 entries.
+	for k := range cache.files {
+		if len(cache.files) <= 100 {
+			break
+		}
+		delete(cache.files, k)
+	}
+
 	// If we're in trailing white space at the end of a scope,
 	// sometimes go/types doesn't recognize that variables should
 	// still be in scope there.
 	filesemi := bytes.Join([][]byte{data[:cursor], []byte(";"), data[cursor:]}, nil)
 
-	fset := token.NewFileSet()
-	fileAST, err := parser.ParseFile(fset, filename, filesemi, parser.AllErrors)
+	fileAST, err := parser.ParseFile(cache.fset, filename, filesemi, parser.AllErrors)
 	if err != nil {
 		c.logParseError("Error parsing input file (outer block)", err)
 	}
@@ -94,35 +162,60 @@ func (c *Config) analyzePackage(filename string, data []byte, cursor int) (*toke
 	if astPos == 0 {
 		return nil, token.NoPos, nil, nil
 	}
-	pos := fset.File(astPos).Pos(cursor)
+	pos := cache.fset.File(astPos).Pos(cursor)
+	trimAST(fileAST, pos)
 
 	files := []*ast.File{fileAST}
 	for _, otherName := range c.findOtherPackageFiles(filename, fileAST.Name.Name) {
-		ast, err := parser.ParseFile(fset, otherName, nil, 0)
-		if err != nil {
-			c.logParseError("Error parsing other file", err)
-		}
-		files = append(files, ast)
-	}
-
-	// Clear any function bodies other than where the cursor
-	// is. They're not relevant to suggestions and only slow down
-	// typechecking.
-	for _, file := range files {
-		for _, decl := range file.Decls {
-			if fd, ok := decl.(*ast.FuncDecl); ok && (pos < fd.Pos() || pos >= fd.End()) {
-				fd.Body = nil
-			}
-		}
+		files = append(files, c.parseOtherFile(otherName))
 	}
 
 	cfg := types.Config{
 		Importer: c.Importer,
 		Error:    func(err error) {},
 	}
-	pkg, _ := cfg.Check("", fset, files, nil)
+	pkg, _ := cfg.Check("", cache.fset, files, nil)
 
-	return fset, pos, pkg, fileAST.Imports
+	return cache.fset, pos, pkg, fileAST.Imports
+}
+
+// trimAST clears any part of the AST not relevant to type checking
+// expressions at pos.
+func trimAST(file *ast.File, pos token.Pos) {
+	ast.Inspect(file, func(n ast.Node) bool {
+		if n == nil {
+			return false
+		}
+		if pos < n.Pos() || pos >= n.End() {
+			switch n := n.(type) {
+			case *ast.FuncDecl:
+				n.Body = nil
+			case *ast.BlockStmt:
+				n.List = nil
+			case *ast.CaseClause:
+				n.Body = nil
+			case *ast.CommClause:
+				n.Body = nil
+			case *ast.CompositeLit:
+				// Leave elts in place for [...]T
+				// array literals, because they can
+				// affect the expression's type.
+				if !isEllipsisArray(n.Type) {
+					n.Elts = nil
+				}
+			}
+		}
+		return true
+	})
+}
+
+func isEllipsisArray(n ast.Expr) bool {
+	at, ok := n.(*ast.ArrayType)
+	if !ok {
+		return false
+	}
+	_, ok = at.Len.(*ast.Ellipsis)
+	return ok
 }
 
 func (c *Config) fieldNameCandidates(typ types.Type, b *candidateCollector) {
@@ -203,7 +296,19 @@ func (c *Config) findOtherPackageFiles(filename, pkgName string) []string {
 	return out
 }
 
+func (c *Config) resolveKnownPackageIdent(pkgName string) *types.Package {
+	pkgName, ok := knownPackageIdents[pkgName]
+	if !ok {
+		return nil
+	}
+	pkg, _ := c.Importer.Import(pkgName)
+	return pkg
+}
+
 func pkgNameFor(filename string) string {
 	file, _ := parser.ParseFile(token.NewFileSet(), filename, nil, parser.PackageClauseOnly)
+	if file == nil {
+		return ""
+	}
 	return file.Name.Name
 }

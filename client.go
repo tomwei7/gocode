@@ -14,7 +14,7 @@ import (
 
 	"runtime/debug"
 
-	"github.com/mdempsky/gocode/internal/gbimporter"
+	"github.com/mdempsky/gocode/internal/cache"
 	"github.com/mdempsky/gocode/internal/suggest"
 )
 
@@ -87,6 +87,9 @@ func doClient() {
 func tryStartServer() error {
 	path := get_executable_filename()
 	args := []string{os.Args[0], "-s", "-sock", *g_sock, "-addr", *g_addr}
+	if *g_cache {
+		args = append(args, "-cache")
+	}
 	cwd, _ := os.Getwd()
 
 	var err error
@@ -126,10 +129,12 @@ func tryToConnect(network, address string) (*rpc.Client, error) {
 func cmdAutoComplete(c *rpc.Client) {
 	var req AutoCompleteRequest
 	req.Filename, req.Data, req.Cursor = prepareFilenameDataCursor()
-	req.Context = gbimporter.PackContext(&build.Default)
+	req.Context = cache.PackContext(&build.Default)
 	req.Source = *g_source
 	req.Builtin = *g_builtin
 	req.IgnoreCase = *g_ignore_case
+	req.UnimportedPackages = *g_unimported_packages
+	req.FallbackToSource = *g_fallback_to_source
 
 	var res AutoCompleteReply
 	var err error
